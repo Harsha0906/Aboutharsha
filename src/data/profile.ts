@@ -194,7 +194,7 @@ export const games: Game[] = [
     controls: 'WASD + mouse, gamepad or touch',
     cover: './playground/dunes.jpg',
     repo: gh('DUNE-'),
-    play: './play/dunes/',
+    play: './play/dunes/index.html',
     tags: ['Three.js', 'Procedural', 'Survival'],
   },
   {
@@ -205,7 +205,7 @@ export const games: Game[] = [
     controls: 'Mouse or touch',
     cover: './playground/tiny-planets.jpg',
     repo: gh('TINY-PLANETS'),
-    play: './play/tiny-planets/',
+    play: './play/tiny-planets/index.html',
     tags: ['Three.js', 'Multiplayer', 'Sandbox'],
   },
   {
@@ -216,7 +216,7 @@ export const games: Game[] = [
     controls: 'Arrow keys / WASD',
     cover: './playground/cybervillage.jpg',
     repo: gh('CyberVillage-'),
-    play: './play/cybervillage/',
+    play: './play/cybervillage/index.html',
     tags: ['Canvas', 'Pixel art', 'Edu-game'],
   },
   {
@@ -227,7 +227,7 @@ export const games: Game[] = [
     controls: 'WASD / arrow keys + mouse',
     cover: './playground/cyberco.jpg',
     repo: gh('CyberCo'),
-    play: './play/cyberco/',
+    play: './play/cyberco/index.html',
     tags: ['Phaser 3', 'React', 'TypeScript'],
   },
   {
@@ -237,7 +237,7 @@ export const games: Game[] = [
     controls: 'Keyboard',
     cover: './playground/neotype.jpg',
     repo: gh('neotype'),
-    play: './play/neotype/',
+    play: './play/neotype/index.html',
     live: 'https://neotype-delta.vercel.app',
     tags: ['JavaScript', 'Typing'],
   },
