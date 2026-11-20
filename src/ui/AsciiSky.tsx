@@ -1,33 +1,10 @@
 import { pointer } from '../state'
 
 // Sky-blue background with drifting clouds drawn only in ASCII characters.
-// Cloud shapes come from layered value noise; denser cloud = heavier glyph.
+// Each cloud is a cluster of round puffs with a flat base; denser = heavier glyph.
 // It draws into an offscreen canvas that the 3D scene uses as its background,
 // so the avatar and props composite cleanly over it (and get depth of field).
 
-const RAMP = ' .·:-=+*o%#@'
-
-function makeNoise(seed: number) {
-  const P = new Uint8Array(512)
-  let s = seed
-  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647)
-  const p = Array.from({ length: 256 }, (_, i) => i)
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1))
-    ;[p[i], p[j]] = [p[j], p[i]]
-  }
-  for (let i = 0; i < 512; i++) P[i] = p[i & 255]
-  const V = Float32Array.from({ length: 256 }, () => rnd())
-  const fade = (t: number) => t * t * (3 - 2 * t)
-  return (x: number, y: number) => {
-    const xi = Math.floor(x), yi = Math.floor(y)
-    const xf = x - xi, yf = y - yi
-    const a = V[P[(xi & 255) + P[yi & 255]]], b = V[P[((xi + 1) & 255) + P[yi & 255]]]
-    const c = V[P[(xi & 255) + P[(yi + 1) & 255]]], d = V[P[((xi + 1) & 255) + P[(yi + 1) & 255]]]
-    const u = fade(xf), v = fade(yf)
-    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
-  }
-}
 
 export const sky = { canvas: null as HTMLCanvasElement | null, frame: 0 }
 
@@ -36,9 +13,8 @@ export function startAsciiSky() {
   const cv = document.createElement('canvas')
   sky.canvas = cv
   const ctx = cv.getContext('2d')!
-  const noise = makeNoise(7)
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  let W = 0, H = 0, cw = 0, ch = 0, cols = 0, rows = 0, dpr = 1, fs = 13
+  let W = 0, H = 0, cw = 0, ch = 0, cols = 0, rows = 0, dpr = 1, fs = 12
   let grad: CanvasGradient
   const resize = () => {
     dpr = Math.min(1.5, window.devicePixelRatio || 1)
@@ -46,7 +22,7 @@ export function startAsciiSky() {
     H = window.innerHeight
     cv.width = Math.round(W * dpr)
     cv.height = Math.round(H * dpr)
-    fs = W < 760 ? 10 : 13
+    fs = W < 760 ? 9 : 12
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.font = `${fs}px "JetBrains Mono", ui-monospace, monospace`
     ctx.textBaseline = 'top'
@@ -62,32 +38,76 @@ export function startAsciiSky() {
   resize()
   window.addEventListener('resize', resize)
 
+  // a handful of cumulus clouds, each a cluster of round puffs with a flat base
+  type Cloud = { x: number; y: number; w: number; speed: number; depth: number; puffs: { dx: number; dy: number; r: number }[] }
+  let seed = 11
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  const makeCloud = (x: number, y: number, w: number): Cloud => {
+    const n = 5 + Math.floor(rnd() * 3)
+    const puffs = []
+    for (let i = 0; i < n; i++) {
+      const u = (i + 0.5) / n
+      const hump = Math.sin(u * Math.PI) // taller in the middle
+      const r = w * (0.13 + 0.12 * hump + rnd() * 0.05)
+      puffs.push({ dx: (u - 0.5) * w * 0.82, dy: -r * (0.35 + 0.5 * hump), r })
+    }
+    // one big crown puff
+    puffs.push({ dx: (rnd() - 0.5) * w * 0.2, dy: -w * 0.24, r: w * 0.2 })
+    const depth = w / 520
+    return { x, y, w, speed: 6 + depth * 14, depth, puffs }
+  }
+  const clouds: Cloud[] = [
+    makeCloud(0.12, 0.2, 300),
+    makeCloud(0.52, 0.12, 220),
+    makeCloud(0.85, 0.3, 380),
+    makeCloud(0.33, 0.48, 460),
+    makeCloud(0.72, 0.66, 300),
+    makeCloud(0.05, 0.8, 360),
+    makeCloud(0.55, 0.92, 520),
+  ]
+  const RAMP2 = ' .:-=+*'
+
   let last = 0
   let px = 0, py = 0
   const draw = (now: number) => {
     requestAnimationFrame(draw)
     if (now - last < 50 || (reduce && sky.frame > 0 && now - last < 1000)) return // ~20 fps is plenty
     last = now
-    const t = now / 1000
-    // clouds drift sideways, climb as you scroll, and shift a little with the cursor
-    px += ((pointer.active ? pointer.x : 0) * 1.2 - px) * 0.05
-    py += ((pointer.active ? pointer.y : 0) * 0.6 - py) * 0.05
-    const sx = (reduce ? 0 : t * 0.3) + px
-    const sy = window.scrollY / (ch * 10) - py
+    const t = reduce ? 0 : now / 1000
+    px += ((pointer.active ? pointer.x : 0) - px) * 0.05
+    py += ((pointer.active ? pointer.y : 0) - py) * 0.05
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, W, H)
-    for (let r = 0; r < rows; r++) {
-      const fy = r / rows
-      const bias = -0.6 + fy * 0.14
-      for (let c = 0; c < cols; c++) {
-        const x = c * 0.03 + sx, y = r * 0.06 + sy
-        let n = noise(x, y) * 0.6 + noise(x * 2.3 + 3.3, y * 2.3 - t * 0.04) * 0.28 + noise(x * 5.1, y * 5.1) * 0.12
-        n += bias
-        if (n <= 0) continue
-        const k = Math.min(1, n * 3.6)
-        const g = RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(k * (RAMP.length - 1)))]
-        ctx.fillStyle = `rgba(255,255,255,${(0.4 + k * 0.6).toFixed(2)})`
-        ctx.fillText(g, c * cw, r * ch)
+    const scale = Math.min(1.25, Math.max(0.55, W / 1440))
+    for (const c of clouds) {
+      // drift right and wrap; climb with scroll; nearer clouds move more (parallax)
+      const span = W + c.w * scale * 2
+      const cx = ((c.x * W + t * c.speed * scale + px * 30 * c.depth) % span + span) % span - c.w * scale
+      const cy = c.y * H - window.scrollY * (0.08 + 0.12 * c.depth) - py * 14 * c.depth
+      const w = c.w * scale
+      // character-grid bounding box
+      const x0 = Math.max(0, Math.floor((cx - w * 0.75) / cw)), x1 = Math.min(cols - 1, Math.ceil((cx + w * 0.75) / cw))
+      const y0 = Math.max(0, Math.floor((cy - w * 0.7) / ch)), y1 = Math.min(rows - 1, Math.ceil((cy + w * 0.08) / ch))
+      for (let r = y0; r <= y1; r++) {
+        const yy = r * ch + ch / 2
+        for (let col = x0; col <= x1; col++) {
+          const xx = col * cw + cw / 2
+          let d = 0
+          for (const p of c.puffs) {
+            const dx = xx - (cx + p.dx * scale), dy = yy - (cy + p.dy * scale)
+            const v = 1 - Math.sqrt(dx * dx + dy * dy) / (p.r * scale)
+            if (v > d) d = v
+          }
+          // flat, soft base
+          d = Math.min(d, (cy - yy) / (w * 0.06) + 0.25)
+          if (d <= 0.02) continue
+          const k = Math.min(1, d * 2.2)
+          const g = RAMP2[Math.min(RAMP2.length - 1, 1 + Math.floor(k * (RAMP2.length - 1)))]
+          // brighter on top, a little shadow toward the base
+          const shade = 0.55 + 0.45 * Math.min(1, Math.max(0, (cy - yy) / (w * 0.35)))
+          ctx.fillStyle = `rgba(255,255,255,${(0.28 + 0.62 * k * shade).toFixed(2)})`
+          ctx.fillText(g, col * cw, r * ch)
+        }
       }
     }
     sky.frame++
