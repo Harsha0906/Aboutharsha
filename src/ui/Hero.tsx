@@ -10,6 +10,7 @@ export function Hero() {
   const blur = useTransform(scrollY, [0, 380], ['blur(0px)', 'blur(14px)'])
   return (
     <section id="hero" data-stop className="hero">
+      <div className="hero-pin">
       <motion.div className="hero-copy" style={{ opacity, filter: blur }}>
         <motion.h1 className="hero-title" style={{ y, letterSpacing: spacing }}>
           <span className="hero-hi">Hi, I'm</span> {profile.shortName}
@@ -24,6 +25,7 @@ export function Hero() {
           <b />
         </i>
       </motion.a>
+      </div>
     </section>
   )
 }

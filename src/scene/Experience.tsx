@@ -27,9 +27,9 @@ const MOBILE: Stop[] = DESKTOP.map((s, i) => ({
   look: [0, i ? -0.6 : -0.5, 0],
 }))
 
-const ease = (x: number) => {
+const ease = (x: number, hold = 0.3) => {
   // hold on each stop for a while, then glide to the next
-  const k = THREE.MathUtils.clamp((x - 0.3) / 0.7, 0, 1)
+  const k = THREE.MathUtils.clamp((x - hold) / (1 - hold), 0, 1)
   return k * k * (3 - 2 * k)
 }
 
@@ -46,7 +46,8 @@ function Rig() {
     const t = THREE.MathUtils.clamp(scroll.t, 0, stops.length - 1)
     const i = Math.floor(t)
     const j = Math.min(stops.length - 1, i + 1)
-    const k = ease(t - i)
+    // the hero holds the camera still while the avatar rises on its own
+    const k = ease(t - i, i === 0 ? 0.74 : 0.3)
     pos.lerpVectors(a.set(...stops[i].pos), b.set(...stops[j].pos), k)
     look.lerpVectors(a.set(...stops[i].look), b.set(...stops[j].look), k)
     // a touch of handheld drift
@@ -113,6 +114,9 @@ export default function Experience({ onReady }: { onReady?: () => void }) {
       <hemisphereLight args={['#fff7ea', '#8fb0cc', 1.5]} />
       <directionalLight position={[-3, 4, 5]} intensity={2.4} color="#fff1dc" />
       <directionalLight position={[4, 1, 3]} intensity={0.5} color="#dfe8ff" />
+      {/* rim lights from behind: a warm and a cool edge that lift the avatar off the sky */}
+      <directionalLight position={[3.5, 2.5, -4]} intensity={3.2} color="#ffd9a8" />
+      <directionalLight position={[-3.5, 1.5, -4]} intensity={2.4} color="#cfe8ff" />
       <Suspense fallback={null}>
         <Environment resolution={64}>
           <Lightformer intensity={1.4} position={[0, 4, 4]} scale={[8, 3, 1]} color="#fff4e2" />

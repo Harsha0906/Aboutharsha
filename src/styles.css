@@ -98,7 +98,9 @@ img { max-width: 100%; display: block; }
 /* ---------- content ---------- */
 .content { position: relative; z-index: 5; }
 
-.hero { height: 100vh; height: 100svh; position: relative; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 13vh; }
+.hero { height: 200vh; height: 200svh; position: relative; }
+/* the copy stays pinned while the avatar rises alone, so nothing else enters during the first scroll */
+.hero-pin { position: sticky; top: 0; height: 100vh; height: 100svh; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 13vh; }
 .hero-copy { text-align: center; padding: 0 var(--gutter); max-width: 820px; }
 .hero-title {
   font-family: var(--font-hand); font-weight: 700; margin: 0; line-height: 0.95;
@@ -264,7 +266,7 @@ img { max-width: 100%; display: block; }
   .frame { inset: 12px; }
   .mark.tl { top: 5px; left: 6px; } .mark.tr { top: 5px; right: 6px; } .mark.bl { bottom: 5px; left: 6px; } .mark.br { bottom: 5px; right: 6px; }
   .m-tl { top: 26px; left: 28px; } .m-tr { top: 26px; right: 28px; }
-  .hero { padding-bottom: 12vh; }
+  .hero-pin { padding-bottom: 12vh; }
   .section { padding: 14vh 16px; align-items: flex-end; }
   .side-right .section-inner, .side-left .section-inner { margin: 0; max-width: none; }
   .game-grid { grid-template-columns: 1fr; }

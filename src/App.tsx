@@ -20,7 +20,7 @@ export default function App() {
   const { scrollY } = useScroll()
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800
   const chrome = useTransform(scrollY, [0, 260], [1, 0])
-  const scrim = useTransform(scrollY, [vh * 0.4, vh * 1.1], [0, 1])
+  const scrim = useTransform(scrollY, [vh * 1.15, vh * 1.8], [0, 1]) // only after the avatar has risen
 
   useEffect(() => {
     remeasure()

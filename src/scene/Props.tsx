@@ -52,7 +52,10 @@ function Floating({
     v.lerpVectors(a, b, e)
     v.y += Math.sin(t * 0.9) * 0.08
     g.position.lerp(v, 1 - Math.exp(-dt * 6))
-    const sc = scale * (0.75 + 0.45 * e)
+    // props stay hidden during the hero, so the avatar's rise is the only thing moving
+    const ap = THREE.MathUtils.smoothstep(scroll.t, 0.85, 1.25)
+    g.visible = ap > 0.001
+    const sc = scale * (0.75 + 0.45 * e) * ap
     g.scale.setScalar(THREE.MathUtils.damp(g.scale.x, sc, 5, dt))
     g.rotation.y = Math.sin(t * spin) * 0.5 + e * 0.2
     g.rotation.x = Math.sin(t * 0.6) * 0.08

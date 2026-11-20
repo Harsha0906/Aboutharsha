@@ -54,7 +54,7 @@ export function startAsciiSky() {
     // one big crown puff
     puffs.push({ dx: (rnd() - 0.5) * w * 0.2, dy: -w * 0.24, r: w * 0.2 })
     const depth = w / 520
-    return { x, y, w, speed: 6 + depth * 14, depth, puffs }
+    return { x, y, w, speed: 16 + depth * 34, depth, puffs }
   }
   const clouds: Cloud[] = [
     makeCloud(0.12, 0.2, 300),
@@ -71,7 +71,7 @@ export function startAsciiSky() {
   let px = 0, py = 0
   const draw = (now: number) => {
     requestAnimationFrame(draw)
-    if (now - last < 50 || (reduce && sky.frame > 0 && now - last < 1000)) return // ~20 fps is plenty
+    if (now - last < 33 || (reduce && sky.frame > 0 && now - last < 1000)) return // ~30 fps
     last = now
     const t = reduce ? 0 : now / 1000
     px += ((pointer.active ? pointer.x : 0) - px) * 0.05
@@ -93,15 +93,19 @@ export function startAsciiSky() {
         for (let col = x0; col <= x1; col++) {
           const xx = col * cw + cw / 2
           let d = 0
-          for (const p of c.puffs) {
-            const dx = xx - (cx + p.dx * scale), dy = yy - (cy + p.dy * scale)
-            const v = 1 - Math.sqrt(dx * dx + dy * dy) / (p.r * scale)
+          for (let pi = 0; pi < c.puffs.length; pi++) {
+            const p = c.puffs[pi]
+            // each puff slowly breathes and wobbles, so the cloud shape keeps changing
+            const ph = t * 0.5 + pi * 1.7 + c.x * 9
+            const pr = p.r * scale * (1 + 0.09 * Math.sin(ph))
+            const dx = xx - (cx + (p.dx + Math.sin(ph * 0.7) * 6) * scale), dy = yy - (cy + (p.dy + Math.cos(ph * 0.6) * 4) * scale)
+            const v = 1 - Math.sqrt(dx * dx + dy * dy) / pr
             if (v > d) d = v
           }
           // flat, soft base
           d = Math.min(d, (cy - yy) / (w * 0.06) + 0.25)
           if (d <= 0.02) continue
-          const k = Math.min(1, d * 2.2)
+          const k = Math.min(1, d * 2.2 + (d < 0.18 ? Math.sin(col * 12.9 + r * 7.3 + t * 3) * 0.12 : 0))
           const g = RAMP2[Math.min(RAMP2.length - 1, 1 + Math.floor(k * (RAMP2.length - 1)))]
           // brighter on top, a little shadow toward the base
           const shade = 0.55 + 0.45 * Math.min(1, Math.max(0, (cy - yy) / (w * 0.35)))

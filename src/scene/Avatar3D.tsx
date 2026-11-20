@@ -21,6 +21,22 @@ const EYE_HALF_H = 0.0098
 const EYEBALL_R = 0.036
 export const AVATAR_SCALE = 4.6
 
+// a soft sunlit glow that sits behind the head
+function makeHaloTexture() {
+  const c = document.createElement('canvas')
+  c.width = c.height = 256
+  const g = c.getContext('2d')!
+  const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128)
+  gr.addColorStop(0, 'rgba(255,248,232,0.85)')
+  gr.addColorStop(0.35, 'rgba(255,244,222,0.38)')
+  gr.addColorStop(1, 'rgba(255,244,222,0)')
+  g.fillStyle = gr
+  g.fillRect(0, 0, 256, 256)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
 function makeEyeTexture() {
   const W = 1024, H = 512
   const c = document.createElement('canvas')
@@ -72,6 +88,7 @@ export default function Avatar3D() {
   const { camera } = useThree()
 
   const invRoot = useMemo(() => ({ value: new THREE.Matrix4() }), [])
+  const rim = useMemo(() => ({ value: 0.55 }), [])
   const eyeSurfaceX = useMemo(() => ({ value: new THREE.Vector2(0.2, 0.2) }), [])
 
   // find how far forward the face surface is at each eye, then cut the eye openings
@@ -96,8 +113,13 @@ export default function Avatar3D() {
       if (!m.isMesh) return
       m.castShadow = false
       const mat = m.material as THREE.MeshStandardMaterial
+      // soft clay finish: matte with a gentle sheen from the environment
+      mat.roughness = 0.58
+      mat.metalness = 0
+      mat.envMapIntensity = 1.1
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uInvRoot = invRoot
+        sh.uniforms.uRim = rim
         sh.uniforms.uEyeX = eyeSurfaceX
         sh.vertexShader = sh.vertexShader
           .replace('#include <common>', '#include <common>\nuniform mat4 uInvRoot;\nvarying vec3 vRootPos;')
@@ -111,6 +133,7 @@ export default function Avatar3D() {
             `#include <common>
 varying vec3 vRootPos;
 uniform vec2 uEyeX;
+uniform float uRim;
 bool inEye(vec2 c, float sx) {
   vec2 d = vec2(vRootPos.z - c.x, vRootPos.y - c.y);
   float u = d.x / ${EYE_HALF_W.toFixed(4)};
@@ -120,6 +143,15 @@ bool inEye(vec2 c, float sx) {
 }`,
           )
           .replace(
+            '#include <opaque_fragment>',
+            `// fresnel rim: a warm glow along the silhouette, like studio back light on clay
+  vec3 vd = normalize(vViewPosition);
+  float fr = pow(1.0 - clamp(dot(normal, vd), 0.0, 1.0), 2.6);
+  outgoingLight += mix(vec3(0.75, 0.88, 1.0), vec3(1.0, 0.86, 0.66), clamp(normal.x * 0.5 + 0.5, 0.0, 1.0)) * fr * uRim;
+  outgoingLight = mix(vec3(dot(outgoingLight, vec3(0.299, 0.587, 0.114))), outgoingLight, 1.08);
+#include <opaque_fragment>`,
+          )
+          .replace(
             'void main() {',
             `void main() {
   if (inEye(vec2(${EYES[0].z}, ${EYES[0].y}), uEyeX.x) || inEye(vec2(${EYES[1].z}, ${EYES[1].y}), uEyeX.y)) discard;`,
@@ -127,9 +159,11 @@ bool inEye(vec2 c, float sx) {
       }
       mat.needsUpdate = true
     })
-  }, [scene, surface, invRoot, eyeSurfaceX])
+  }, [scene, surface, invRoot, eyeSurfaceX, rim])
 
   const eyeTex = useMemo(() => makeEyeTexture(), [])
+  const haloTex = useMemo(() => makeHaloTexture(), [])
+  const halo = useRef<THREE.Mesh>(null)
   const eyeMat = useMemo(() => new THREE.MeshStandardMaterial({ map: eyeTex, roughness: 0.18, metalness: 0 }), [eyeTex])
   const lidMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#b97a5a', roughness: 0.7 }), [])
   const eyeGeo = useMemo(() => new THREE.SphereGeometry(EYEBALL_R, 48, 32), [])
@@ -151,9 +185,16 @@ bool inEye(vec2 c, float sx) {
     const rise = 1 - Math.pow(1 - rk, 3)
     o.position.y = -8 * (1 - rise) + Math.sin(t * 1.1) * 0.03
     o.visible = rise > 0.001
+    // the glow blooms in as the avatar arrives
+    if (halo.current) {
+      const hm = halo.current.material as THREE.MeshBasicMaterial
+      hm.opacity = 0.75 * rise * (0.92 + 0.08 * Math.sin(t * 0.8))
+      halo.current.scale.setScalar(0.85 + 0.15 * rise)
+    }
 
     // the head turns gently toward the cursor
-    o.rotation.y = THREE.MathUtils.damp(o.rotation.y, tx * 0.28, 3, dt)
+    o.rotation.y = THREE.MathUtils.damp(o.rotation.y, tx * 0.28 + (1 - rise) * 0.9, 3, dt)
+    o.scale.setScalar(0.88 + 0.12 * rise)
     o.rotation.x = THREE.MathUtils.damp(o.rotation.x, -ty * 0.12, 3, dt)
 
     o.updateMatrixWorld(true)
@@ -193,6 +234,10 @@ bool inEye(vec2 c, float sx) {
 
   return (
     <group ref={outer} position={[0, -8, 0]}>
+      <mesh ref={halo} position={[0, 0.25, -1.4]} renderOrder={-1}>
+        <planeGeometry args={[5.2, 5.2]} />
+        <meshBasicMaterial map={haloTex} transparent depthWrite={false} toneMapped={false} opacity={0} />
+      </mesh>
       {/* model faces +X; turn it to face the camera (+Z) and centre the face */}
       <group ref={root} rotation={[0, -Math.PI / 2, 0]} scale={AVATAR_SCALE} position={[0, -0.55, 0]}>
         <primitive object={scene} />
