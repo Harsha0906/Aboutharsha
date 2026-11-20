@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Environment, Lightformer, AdaptiveDpr } from '@react-three/drei'
 import { EffectComposer, Bloom, Vignette, SMAA } from '@react-three/postprocessing'
 import * as THREE from 'three'
-import Avatar from './Avatar'
+import Avatar from './Avatar3D'
 import Props from './Props'
 import { scroll } from '../state'
 import { startAsciiSky } from '../ui/AsciiSky'
@@ -110,8 +110,8 @@ export default function Experience({ onReady }: { onReady?: () => void }) {
       <AdaptiveDpr pixelated={false} />
       <SkyBackground />
       <Rig />
-      <hemisphereLight args={['#fff7ea', '#6f7a58', 0.9]} />
-      <directionalLight position={[-3, 4, 5]} intensity={1.6} color="#fff1dc" />
+      <hemisphereLight args={['#fff7ea', '#8fb0cc', 1.5]} />
+      <directionalLight position={[-3, 4, 5]} intensity={2.4} color="#fff1dc" />
       <directionalLight position={[4, 1, 3]} intensity={0.5} color="#dfe8ff" />
       <Suspense fallback={null}>
         <Environment resolution={64}>
