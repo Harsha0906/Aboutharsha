@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { profile } from '../data/profile'
 import { Kicker, Reveal, Section } from './Section'
@@ -9,10 +10,22 @@ export function Hero() {
   const spacing = useTransform(scrollY, [0, 500], ['0em', '0.3em'])
   const opacity = useTransform(scrollY, [0, 380], [1, 0])
   const blur = useTransform(scrollY, [0, 380], ['blur(0px)', 'blur(14px)'])
-  // the sticker layout is drawn for a ~1200px wide screen; pull it in (and shrink it) on narrower ones
-  const k = typeof window === 'undefined' ? 1 : Math.min(1, window.innerWidth / 1200)
-  const pos = (x: number, y: number) => ({ x: Math.round(x * Math.max(0.36, k)), y: Math.round(y * Math.max(0.6, k)) })
-  const size = (w: number) => Math.round(w * Math.max(0.55, k))
+
+  // Responsive scaling that dynamically adapts on screen resize and orientation change
+  const [winWidth, setWinWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200)
+  useEffect(() => {
+    const onResize = () => setWinWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const k = Math.min(1, winWidth / 1200)
+  const isMobile = winWidth < 640
+  const pos = (x: number, y: number) => ({
+    x: Math.round(x * (isMobile ? 0.31 : Math.max(0.36, k))),
+    y: Math.round(y * (isMobile ? 0.52 : Math.max(0.6, k))),
+  })
+  const size = (w: number) => Math.round(w * (isMobile ? 0.44 : Math.max(0.55, k)))
   return (
     <section id="hero" data-stop className="hero">
       <div className="hero-pin">
