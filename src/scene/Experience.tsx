@@ -1,133 +1,150 @@
-import { Suspense, useEffect, useMemo, useRef } from 'react'
+import { Suspense, useMemo, useRef } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Environment, Lightformer, AdaptiveDpr } from '@react-three/drei'
-import { EffectComposer, Bloom, Vignette, SMAA } from '@react-three/postprocessing'
+import { AdaptiveDpr } from '@react-three/drei'
 import * as THREE from 'three'
 import Avatar from './Avatar3D'
-import Props from './Props'
-import { scroll } from '../state'
-import { startAsciiSky } from '../ui/AsciiSky'
+import { pointer, scroll } from '../state'
+import { smoothDamp } from '../motion'
 
-type Stop = { pos: [number, number, number]; look: [number, number, number] }
+type Stop = {
+  pos: [number, number, number]
+  look: [number, number, number]
+}
 
-// One camera stop per section (same order as `sections` in data/profile.ts).
+// 8 distinct, dynamic 3D camera stops for each portfolio section:
+// 0: Hero       - Centered welcoming portrait (straight-on, eye-level)
+// 1: About      - Sweeps RIGHT & low-angle (avatar framed comfortably on the LEFT)
+// 2: Journey    - Sweeps HIGH & ZOOMS CLOSER (intimate 3/4 storytelling angle)
+// 3: Projects   - Sweeps LEFT & PULLS BACK WIDE (large viewing space for project gallery)
+// 4: Playground - DIPS LOW & RIGHT with dynamic upward tilt (playful, energetic gaming angle)
+// 5: Badges     - RISES HIGH & CENTER-LEFT (dignified elevated overview for certificates)
+// 6: Skills     - DEEP PAN LEFT & MEDIUM-CLOSE (avatar on the RIGHT, surveying toolbox on left)
+// 7: Contact    - DESCENDS TO CENTER (intimate, warm closing hero portrait)
 const DESKTOP: Stop[] = [
-  { pos: [0, 0.1, 8.4], look: [0, -0.75, 0] }, // hello: face high, title over the chest
-  { pos: [2.5, 0.55, 6.6], look: [1.7, 0.35, 0] }, // about: avatar on the left
-  { pos: [2.6, 1.0, 5.0], look: [1.45, 0.65, 0] }, // experience: closer on the face
-  { pos: [-3.4, 0.4, 8.6], look: [-3.0, 0.1, 0] }, // projects: avatar far right, dimmed
-  { pos: [3.4, 0.3, 8.6], look: [3.0, 0.0, 0] }, // playground: avatar far left
-  { pos: [-3.2, 0.7, 8.2], look: [-2.8, 0.4, 0] }, // certificates
-  { pos: [-2.4, 0.8, 6.4], look: [-1.6, 0.5, 0] }, // skills: avatar on the right
-  { pos: [0, 0.2, 8.0], look: [0, -0.95, 0] }, // contact: face high, text below
+  { pos: [0, 0, 7.8], look: [0, 0, 0] },              // 0: Hero (Center)
+  { pos: [2.3, 0.3, 6.8], look: [1.4, 0.25, 0] },     // 1: About (Pan Right & Low)
+  { pos: [1.8, 0.85, 5.6], look: [1.1, 0.65, 0] },    // 2: Journey (High & Close Zoom)
+  { pos: [-1.2, 0.6, 8.8], look: [-0.6, 0.3, 0] },    // 3: Projects (Pan Left & Pull Back Wide)
+  { pos: [1.4, -0.15, 7.4], look: [0.7, 0.2, 0] },    // 4: Playground (Dip Low & Right, Upward Tilt)
+  { pos: [-0.8, 0.95, 8.0], look: [-0.35, 0.55, 0] }, // 5: Badges (Rise High & Left)
+  { pos: [-2.4, 0.35, 6.6], look: [-1.55, 0.25, 0] }, // 6: Skills (Deep Pan Left, Avatar on Right)
+  { pos: [0, 0.05, 7.5], look: [0, -0.1, 0] },        // 7: Contact (Smooth Descent to Center)
 ]
 
-const MOBILE: Stop[] = DESKTOP.map((s, i) => ({
-  pos: [s.pos[0] * 0.25, 0.2 + (i ? 0.2 : 0), 9.6 + (i ? 0.6 : 0)],
-  look: [0, i ? -0.6 : -0.5, 0],
-}))
+const MOBILE: Stop[] = [
+  { pos: [0, 0.1, 8.8], look: [0, -0.2, 0] },
+  { pos: [0.35, 0.35, 9.2], look: [0.15, 0.1, 0] },
+  { pos: [0.3, 0.6, 8.5], look: [0.15, 0.35, 0] },
+  { pos: [-0.3, 0.5, 9.6], look: [-0.15, 0.2, 0] },
+  { pos: [0.3, 0.1, 9.0], look: [0.15, 0.15, 0] },
+  { pos: [-0.25, 0.65, 9.2], look: [-0.1, 0.3, 0] },
+  { pos: [-0.35, 0.4, 8.8], look: [-0.15, 0.15, 0] },
+  { pos: [0, 0.15, 8.8], look: [0, -0.25, 0] },
+]
 
-const ease = (x: number, hold = 0.3) => {
-  // hold on each stop for a while, then glide to the next
-  const k = THREE.MathUtils.clamp((x - hold) / (1 - hold), 0, 1)
-  return k * k * (3 - 2 * k)
+// One cinematic camera path through the section stops.
+// Position and look-at each follow a centripetal Catmull-Rom curve. Within each segment the camera
+// holds on the stop for the first and last 15% of the scroll and glides in between (smootherstep,
+// so velocity is continuous). Arc-length mapping keeps the glide speed even between stops.
+const HOLD = 0.15
+const DIVS_PER_SEG = 48
+const smootherstep = (x: number) => x * x * x * (x * (x * 6 - 15) + 10)
+
+/** arc-length fraction (0..1) of the curve at each stop */
+function stopFractions(curve: THREE.CatmullRomCurve3, segs: number) {
+  const lengths = curve.getLengths(segs * DIVS_PER_SEG)
+  const total = lengths[lengths.length - 1] || 1
+  return Array.from({ length: segs + 1 }, (_, i) => lengths[i * DIVS_PER_SEG] / total)
+}
+
+/** section progress (fractional stop index) -> arc-length fraction with holds at each stop */
+function pathFraction(t: number, fr: number[]) {
+  const segs = fr.length - 1
+  const tc = THREE.MathUtils.clamp(t, 0, segs)
+  const i = Math.min(segs - 1, Math.floor(tc))
+  const f = tc - i
+  const g = f <= HOLD ? 0 : f >= 1 - HOLD ? 1 : smootherstep((f - HOLD) / (1 - 2 * HOLD))
+  return fr[i] + (fr[i + 1] - fr[i]) * g
 }
 
 function Rig() {
   const { camera, size } = useThree()
-  const stops = size.width < 760 ? MOBILE : DESKTOP
-  const pos = useMemo(() => new THREE.Vector3(...stops[0].pos), [stops])
-  const look = useMemo(() => new THREE.Vector3(...stops[0].look), [stops])
-  const curLook = useRef(new THREE.Vector3(...stops[0].look))
-  const a = useMemo(() => new THREE.Vector3(), [])
-  const b = useMemo(() => new THREE.Vector3(), [])
+  const desktop = size.width >= 768
+  const stops = desktop ? DESKTOP : MOBILE
 
-  useFrame((s, dt) => {
-    const t = THREE.MathUtils.clamp(scroll.t, 0, stops.length - 1)
-    const i = Math.floor(t)
-    const j = Math.min(stops.length - 1, i + 1)
-    // the hero holds the camera still while the avatar rises on its own
-    const k = ease(t - i, i === 0 ? 0.74 : 0.3)
-    pos.lerpVectors(a.set(...stops[i].pos), b.set(...stops[j].pos), k)
-    look.lerpVectors(a.set(...stops[i].look), b.set(...stops[j].look), k)
-    // a touch of handheld drift
-    const tm = s.clock.elapsedTime
-    pos.x += Math.sin(tm * 0.21) * 0.05
-    pos.y += Math.sin(tm * 0.17) * 0.04
-    const damp = 1 - Math.exp(-dt * 3.2)
-    camera.position.lerp(pos, damp)
-    curLook.current.lerp(look, damp)
-    camera.lookAt(curLook.current)
-  })
-  return null
-}
+  const path = useMemo(() => {
+    const pos = new THREE.CatmullRomCurve3(stops.map((s) => new THREE.Vector3(...s.pos)), false, 'centripetal', 0.5)
+    const look = new THREE.CatmullRomCurve3(stops.map((s) => new THREE.Vector3(...s.look)), false, 'centripetal', 0.5)
+    return { pos, look, posFr: stopFractions(pos, stops.length - 1), lookFr: stopFractions(look, stops.length - 1) }
+  }, [stops])
 
-// The ASCII sky lives in a 2D canvas and is shown as the scene background.
-function SkyBackground() {
-  const { scene } = useThree()
-  const tex = useMemo(() => {
-    const sky = startAsciiSky()
-    const t = new THREE.CanvasTexture(sky.canvas!)
-    t.colorSpace = THREE.SRGBColorSpace
-    t.minFilter = THREE.LinearFilter
-    t.generateMipmaps = false
-    return t
-  }, [])
-  const seen = useRef(-1)
-  useEffect(() => {
-    scene.background = tex
-    return () => { scene.background = null }
-  }, [scene, tex])
-  useFrame(() => {
-    const sky = startAsciiSky()
-    if (sky.frame !== seen.current) {
-      seen.current = sky.frame
-      if (tex.image !== sky.canvas) tex.image = sky.canvas
-      tex.needsUpdate = true
-    }
-  })
-  return null
-}
-
-function Effects() {
-  // no depth of field: the ASCII clouds stay crisp
-  return (
-    <EffectComposer multisampling={0} enableNormalPass={false}>
-      <Bloom intensity={0.25} luminanceThreshold={0.85} mipmapBlur />
-      <Vignette offset={0.3} darkness={0.45} />
-      <SMAA />
-    </EffectComposer>
+  // all per-frame state is preallocated: no allocations inside useFrame
+  const v = useMemo(
+    () => ({
+      rawPos: new THREE.Vector3(),
+      rawLook: new THREE.Vector3(),
+      px: { x: stops[0].pos[0], v: 0 },
+      py: { x: stops[0].pos[1], v: 0 },
+      pz: { x: stops[0].pos[2], v: 0 },
+      lx: { x: stops[0].look[0], v: 0 },
+      ly: { x: stops[0].look[1], v: 0 },
+      lz: { x: stops[0].look[2], v: 0 },
+      mx: 0,
+      my: 0,
+      look: new THREE.Vector3(),
+    }),
+    [stops],
   )
+
+  useFrame((_, delta) => {
+    const dt = Math.min(delta, 0.1)
+    // scroll.smooth is already critically damped (~0.3 s) in motion.ts; never use raw scroll here
+    const t = scroll.smooth
+    path.pos.getPointAt(pathFraction(t, path.posFr), v.rawPos)
+    path.look.getPointAt(pathFraction(t, path.lookFr), v.rawLook)
+
+    // mouse parallax: up to ±0.15 units toward the cursor, eases back to centre when it leaves (desktop only)
+    const tx = desktop && pointer.active ? pointer.x * 0.15 : 0
+    const ty = desktop && pointer.active ? pointer.y * 0.15 : 0
+    v.mx = THREE.MathUtils.damp(v.mx, tx, 2.5, dt)
+    v.my = THREE.MathUtils.damp(v.my, ty, 2.5, dt)
+
+    // position and look-at target are damped separately (short, critically damped)
+    camera.position.set(
+      smoothDamp(v.px, v.rawPos.x, 0.12, dt) + v.mx,
+      smoothDamp(v.py, v.rawPos.y, 0.12, dt) + v.my,
+      smoothDamp(v.pz, v.rawPos.z, 0.12, dt),
+    )
+    v.look.set(smoothDamp(v.lx, v.rawLook.x, 0.16, dt), smoothDamp(v.ly, v.rawLook.y, 0.16, dt), smoothDamp(v.lz, v.rawLook.z, 0.16, dt))
+    camera.lookAt(v.look)
+  })
+
+  return null
 }
+
+// Plain warm paper behind the scene. THREE.Color converts the sRGB hex to linear and the renderer
+// converts it back on output; the clear colour is not tone-mapped, so the screen reads exactly #EFECE6.
+const PAPER = '#efece6'
 
 export default function Experience({ onReady }: { onReady?: () => void }) {
   const lowPower = typeof navigator !== 'undefined' && (navigator.hardwareConcurrency ?? 8) <= 4
   return (
     <Canvas
       dpr={[1, lowPower ? 1.25 : 1.75]}
-      gl={{ antialias: false, alpha: false, powerPreference: 'high-performance', toneMapping: THREE.ACESFilmicToneMapping }}
-      camera={{ position: DESKTOP[0].pos, fov: 34, near: 0.1, far: 60 }}
+      gl={{ antialias: true, alpha: false, powerPreference: 'high-performance' }}
+      camera={{ position: [0, 0, 7.8], fov: 34, near: 0.1, far: 60 }}
     >
       <AdaptiveDpr pixelated={false} />
-      <SkyBackground />
-      <Rig />
-      <hemisphereLight args={['#fff7ea', '#8fb0cc', 1.5]} />
-      <directionalLight position={[-3, 4, 5]} intensity={2.4} color="#fff1dc" />
-      <directionalLight position={[4, 1, 3]} intensity={0.5} color="#dfe8ff" />
-      {/* rim lights from behind: a warm and a cool edge that lift the avatar off the sky */}
-      <directionalLight position={[3.5, 2.5, -4]} intensity={3.2} color="#ffd9a8" />
-      <directionalLight position={[-3.5, 1.5, -4]} intensity={2.4} color="#cfe8ff" />
+      <color attach="background" args={[PAPER]} />
       <Suspense fallback={null}>
-        <Environment resolution={64}>
-          <Lightformer intensity={1.4} position={[0, 4, 4]} scale={[8, 3, 1]} color="#fff4e2" />
-          <Lightformer intensity={0.6} position={[-5, 0, 2]} rotation-y={Math.PI / 2} scale={[6, 4, 1]} color="#dfe9d0" />
-          <Lightformer intensity={0.4} position={[5, -1, 1]} rotation-y={-Math.PI / 2} scale={[6, 4, 1]} color="#cfd9ff" />
-        </Environment>
         <Avatar />
-        <Props />
         <Ready onReady={onReady} />
       </Suspense>
-      <Effects />
+      <Rig />
+      {/* Clean, natural neutral lighting without artificial rim colors or glow */}
+      <hemisphereLight args={['#ffffff', '#666666', 1.1]} />
+      <directionalLight position={[1.5, 3, 5]} intensity={1.6} color="#ffffff" />
+      <directionalLight position={[-2.5, 1.5, 4]} intensity={0.8} color="#ffffff" />
     </Canvas>
   )
 }

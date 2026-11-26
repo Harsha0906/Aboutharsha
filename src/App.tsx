@@ -18,9 +18,7 @@ const Experience = lazy(() => import('./scene/Experience'))
 export default function App() {
   const [ready, setReady] = useState(false)
   const { scrollY } = useScroll()
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
   const chrome = useTransform(scrollY, [0, 260], [1, 0])
-  const scrim = useTransform(scrollY, [vh * 1.15, vh * 1.8], [0, 1]) // only after the avatar has risen
 
   useEffect(() => {
     remeasure()
@@ -37,8 +35,7 @@ export default function App() {
           <Experience onReady={() => setReady(true)} />
         </Suspense>
       </div>
-      <motion.div className="scrim" style={{ opacity: scrim }} aria-hidden="true" />
-      <Fog />
+      <div className="dots" aria-hidden="true" />
 
       <motion.div className="chrome" style={{ opacity: chrome }} aria-hidden="true">
         <div className="frame" />
@@ -52,7 +49,7 @@ export default function App() {
         </div>
         <div className="meta m-tr">Portfolio — {new Date().getFullYear()}</div>
         <div className="meta m-bl">Code · Play · Build</div>
-        <div className="meta m-r">Move your cursor · I'm watching</div>
+        <div className="meta m-r">Scroll to explore</div>
       </motion.div>
 
       <Nav />
@@ -73,25 +70,4 @@ export default function App() {
       </noscript>
     </>
   )
-}
-
-// Dims and softens the 3D scene behind the full-width sections (projects, playground, badges).
-function Fog() {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    let raf = 0
-    const ss = (a: number, b: number, x: number) => {
-      const k = Math.min(1, Math.max(0, (x - a) / (b - a)))
-      return k * k * (3 - 2 * k)
-    }
-    const tick = () => {
-      const t = scroll.t
-      const v = ss(2.45, 2.95, t) * (1 - ss(5.1, 5.6, t))
-      if (ref.current) ref.current.style.opacity = v.toFixed(3)
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [])
-  return <div ref={ref} className="fog" aria-hidden="true" />
 }

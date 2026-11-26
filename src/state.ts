@@ -12,6 +12,10 @@ export const scroll = {
   t: 0,
   /** overall page progress 0..1 */
   p: 0,
+  /** critically damped copy of `t` (updated in motion.ts): the camera and the section reveals follow this */
+  smooth: 0,
+  /** number of section stops on the page */
+  stops: 8,
 }
 
 if (typeof window !== 'undefined') {
@@ -29,16 +33,35 @@ if (typeof window !== 'undefined') {
   const measure = () => {
     const els = Array.from(document.querySelectorAll<HTMLElement>('[data-stop]'))
     if (!els.length) return
-    const y = window.scrollY + window.innerHeight * 0.45
+    const scrollY = window.scrollY
+    const vh = window.innerHeight
+    const refOffset = vh * 0.35 // comfortable reading reference line
+    const refLine = scrollY + refOffset
     const tops = els.map((el) => el.offsetTop)
+    const n = tops.length
+    scroll.stops = n
+
     let t = 0
-    for (let i = 0; i < tops.length; i++) {
-      const next = tops[i + 1] ?? tops[i] + els[i].offsetHeight
-      if (y >= tops[i]) t = i + Math.min(1, (y - tops[i]) / Math.max(1, next - tops[i]))
+    if (scrollY <= 0) {
+      t = 0
+    } else if (n > 1 && scrollY < tops[1] - refOffset) {
+      // Smooth continuous hero exit into section 1
+      const heroRange = Math.max(1, tops[1] - refOffset)
+      t = Math.min(1, Math.max(0, scrollY / heroRange))
+    } else if (refLine >= tops[n - 1]) {
+      t = n - 1
+    } else {
+      for (let i = 1; i < n - 1; i++) {
+        if (refLine <= tops[i + 1]) {
+          const range = Math.max(1, tops[i + 1] - tops[i])
+          t = i + (refLine - tops[i]) / range
+          break
+        }
+      }
     }
-    scroll.t = Math.min(t, tops.length - 1)
-    const max = document.documentElement.scrollHeight - window.innerHeight
-    scroll.p = max > 0 ? window.scrollY / max : 0
+    scroll.t = Math.min(Math.max(0, t), n - 1)
+    const max = document.documentElement.scrollHeight - vh
+    scroll.p = max > 0 ? scrollY / max : 0
   }
   window.addEventListener('scroll', measure, { passive: true })
   window.addEventListener('resize', measure)

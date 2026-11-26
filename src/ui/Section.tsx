@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { registerReveal } from '../motion'
 
 export function Section({
   id,
@@ -29,16 +29,17 @@ export function Kicker({ n, children }: { n: number; children: ReactNode }) {
   )
 }
 
+// Fades and lifts in as the camera arrives at this section, and out as it leaves.
+// `delay` (seconds) is kept from the old API and becomes the stagger order (~60 ms per step).
 export function Reveal({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!ref.current) return
+    return registerReveal(ref.current, Math.round(delay / 0.06) + 1)
+  }, [delay])
   return (
-    <motion.div
-      className={className}
-      initial={{ opacity: 0, y: 28, filter: 'blur(8px)' }}
-      whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      viewport={{ once: true, margin: '-12% 0px' }}
-      transition={{ duration: 0.8, delay, ease: [0.2, 0.7, 0.2, 1] }}
-    >
+    <div ref={ref} className={className ? `reveal ${className}` : 'reveal'}>
       {children}
-    </motion.div>
+    </div>
   )
 }
